@@ -1,0 +1,68 @@
+
+pipeline {
+    agent any
+
+    tools {
+        maven 'mymaven'
+    }
+
+    stages {
+
+        stage('Code Checkout') {
+            steps {
+                git branch: 'master',
+                    url: 'https://github.com/Sujith404/dockerwebapp.git'
+            }
+        }
+
+        stage('Code Quality Analysis') {
+            steps {
+                withSonarQubeEnv('mysonar') {
+                    sh 'mvn clean verify sonar:sonar -Dsonar.projectKey=MyProject'
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+                sh 'cp target/vprofile-v2.war Docker-app/'
+            }
+        }
+
+        stage('Docker Image Creation') {
+            steps {
+                sh 'docker build -t appimage Docker-app'
+                sh 'docker build -t dbimage Docker-db'
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    docker rm -f appcont devopsdb || true
+
+                    docker run -d \
+                        --name devopsdb \
+                        -p 3306:3306 \
+                        dbimage
+
+                    docker run -d \
+                        --name appcont \
+                        -p 1234:8080 \
+                        --link devopsdb:mysqlcon \
+                        appimage
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Application deployed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed. Check Jenkins console output.'
+        }
+    }
+}
